@@ -76,7 +76,9 @@ async def process_youtube_link(update: Update, context: ContextTypes.DEFAULT_TYP
 async def main_pipeline(tg_update, application):
     """Executes all steps sequentially inside a single unified async loop."""
     await application.initialize()
+    await application.start()  # Required to wake up route listening
     await application.process_update(tg_update)
+    await application.stop()   # Gracefully wind down before freeze
     await application.shutdown()
 
 # ==========================================
@@ -95,10 +97,10 @@ def handler(event, context):
         # Wire up event routers
         application.add_handler(CommandHandler("start", start_command))
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_youtube_link))
-
         # Parse incoming update
         body_data = json.loads(event["body"])
         tg_update = Update.de_json(body_data, application.bot)
+
         # Run everything in ONE single event loop execution
         asyncio.run(main_pipeline(tg_update, application))
 
