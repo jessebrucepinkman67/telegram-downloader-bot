@@ -1,5 +1,4 @@
 export default async (req, context) => {
-  // Only accept POST requests from Telegram
   if (req.method !== "POST") {
     return new Response("Method Not Allowed", { status: 405 });
   }
@@ -9,7 +8,6 @@ export default async (req, context) => {
     const MONETAG_SMARTLINK = process.env.MONETAG_SMARTLINK || "https://www.google.com";
     const COBALT_API_URL = "https://api.cobalt.tools/api/json";
 
-    // Parse incoming Telegram data
     const bodyData = await req.json();
     const message = bodyData.message || {};
     const chatId = message.chat?.id;
@@ -19,9 +17,9 @@ export default async (req, context) => {
       return new Response("No action", { status: 200 });
     }
 
-    const tgUrl = https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage;
+    // Fixed using standard quotes to completely avoid punctuation errors
+    const tgUrl = "https://api.telegram.org/bot" + TELEGRAM_BOT_TOKEN + "/sendMessage";
 
-    // 1. Handle /start command
     if (text.startsWith("/start")) {
       await fetch(tgUrl, {
         method: "POST",
@@ -35,16 +33,17 @@ export default async (req, context) => {
       return new Response("Success", { status: 200 });
     }
 
-    // 2. Handle YouTube Links
     if (text.includes("youtube.com") || text.includes("youtu.be")) {
-      // Send processing alert
       await fetch(tgUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: chatId, text: "⏳ *Processing your video link... Please wait...*", parse_mode: "Markdown" })
+        body: JSON.stringify({ 
+          chat_id: chatId, 
+          text: "⏳ *Processing your video link... Please wait...*", 
+          parse_mode: "Markdown" 
+        })
       });
 
-      // Query Cobalt Engine
       const cobaltResponse = await fetch(COBALT_API_URL, {
         method: "POST",
         headers: { "Accept": "application/json", "Content-Type": "application/json" },
@@ -56,7 +55,6 @@ export default async (req, context) => {
         const streamUrl = cobaltData.url;
 
         if (streamUrl) {
-          // Send links with the layout buttons
           await fetch(tgUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -69,16 +67,28 @@ export default async (req, context) => {
                   [{ text: "📁 Direct Stream Link (Backup)", url: streamUrl }]
                 ]
               }
-            });
+            })
           });
         } else {
-          await fetch(tgUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chat_id: chatId, text: "❌ Failed to parse download link." }) });
+          await fetch(tgUrl, { 
+            method: "POST", 
+            headers: { "Content-Type": "application/json" }, 
+            body: JSON.stringify({ chat_id: chatId, text: "❌ Failed to parse download link." }) 
+          });
         }
       } else {
-        await fetch(tgUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chat_id: chatId, text: "❌ Processing engine error." }) });
+        await fetch(tgUrl, { 
+          method: "POST", 
+          headers: { "Content-Type": "application/json" }, 
+          body: JSON.stringify({ chat_id: chatId, text: "❌ Processing engine error." }) 
+        });
       }
     } else {
-      await fetch(tgUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chat_id: chatId, text: "❌ Please send a valid YouTube link." }) });
+      await fetch(tgUrl, { 
+        method: "POST", 
+        headers: { "Content-Type": "application/json" }, 
+        body: JSON.stringify({ chat_id: chatId, text: "❌ Please send a valid YouTube link." }) 
+      });
     }
 
     return new Response("Success", { status: 200 });
