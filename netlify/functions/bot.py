@@ -1,117 +1,74 @@
 import os
 import json
-import asyncio
 import requests
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
-# ==========================================
-# CONFIGURATION & ENVIRONMENT SETUP
-# ==========================================
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
-MONETAG_SMARTLINK = os.getenv("MONETAG_SMARTLINK", "https://www.google.com") 
+MONETAG_SMARTLINK = os.getenv("MONETAG_SMARTLINK", "https://www.google.com")
 COBALT_API_URL = "https://api.cobalt.tools/api/json"
 
-# ==========================================
-# BOT CORE ACTIONS
-# ==========================================
-
-async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Sends a welcoming greeting to the user."""
-    await update.message.reply_text(
-        "👋 Welcome! Send me any YouTube link, and I will instantly extract your high-speed download links."
-    )
-
-async def process_youtube_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Intercepts text inputs, queries Cobalt, and responds with buttons."""
-    user_url = update.message.text.strip()
-    
-    if not ("youtube.com" in user_url or "youtu.be" in user_url):
-        await update.message.reply_text("❌ Please send a valid YouTube link.")
-        return
-
-    status_message = await update.message.reply_text("⏳ Processing your video link... Please wait...")
-
+def send_telegram_message(chat_id, text, reply_markup=None):
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {"chat_id": chat_id, "text": text, "parse_mode": "Markdown"}
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
     try:
-        headers = {
-            "Accept": "application/json",
-            "Content-Type": "application/json"
-        }
-        payload = {
-            "url": user_url,
-            "videoQuality": "720",
-            "downloadMode": "auto"
-        }
-
-        response = requests.post(COBALT_API_URL, json=payload, headers=headers, timeout=15)
-        
-        if response.status_code == 200:
-            data = response.json()
-            stream_url = data.get("url")
-
-            if stream_url:
-                keyboard = [
-                    [InlineKeyboardButton("🚀 High-Speed Download (Fast)", url=MONETAG_SMARTLINK)],
-                    [InlineKeyboardButton("📁 Direct Stream Link (Backup)", url=stream_url)]
-                ]
-                reply_markup = InlineKeyboardMarkup(keyboard)
-
-                await status_message.delete()
-                await update.message.reply_text(
-                    "✅ Your video is fully processed and ready!\n\nSelect a download mirror below:",
-                    reply_markup=reply_markup
-                )
-            else:
-                await status_message.edit_text("❌ Failed to parse media stream extraction vectors.")
-        else:
-            await status_message.edit_text(f"❌ Processing engine error: {response.status_code}")
-
+        requests.post(url, json=payload, timeout=10)
     except Exception as e:
-        await status_message.edit_text(f"💥 Error processing request: {str(e)}")
-
-# ==========================================
-# HOUSING EVERYTHING IN ONE ASYNC RUNNER
-# ==========================================
-
-async def main_pipeline(tg_update, application):
-    """Executes all steps sequentially inside a single unified async loop."""
-    await application.initialize()
-    await application.start()  # Required to wake up route listening
-    await application.process_update(tg_update)
-    await application.stop()   # Gracefully wind down before freeze
-    await application.shutdown()
-
-# ==========================================
-# SYNCHRONOUS NETLIFY RUNTIME GATEWAY
-# ==========================================
+        print(f"Error: {e}")
 
 def handler(event, context):
-    """Standard synchronous entrypoint for Netlify Serverless Functions."""
     if not event.get("body"):
-        return {"statusCode": 400, "body": "Missing request payload body."}
+        return {"statusCode": 400, "body": "Missing body"}
 
     try:
-        # Create application instance
-        application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
-
-        # Wire up event routers
-        application.add_handler(CommandHandler("start", start_command))
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_youtube_link))
-        # Parse incoming update
         body_data = json.loads(event["body"])
-        tg_update = Update.de_json(body_data, application.bot)
+        message = body_data.get("message", {})
+        chat_id = message.get("chat", {}).get("id")
+        text = message.get("text", "").strip()
 
-        # Run everything in ONE single event loop execution
-        asyncio.run(main_pipeline(tg_update, application))
+        if not chat_id or not text:
+            return {"statusCode": 200, "body": "No action"}
 
-        return {
-            "statusCode": 200,
-            "body": json.dumps({"status": "success"})
-        }
+        if text.startswith("/start"):
+            send_telegram_message(
+                chat_id, 
+                "👋 *Welcome!*\n\nSend me any valid YouTube link, and I will instantly extract your high-speed download links."
+            )
+            return {"statusCode": 200, "body": "Success"}
+
+        if "youtube.com" in text or "youtu.be" in text:
+            send_telegram_message(chat_id, "⏳ *Processing your video link... Please wait...*")
+
+            headers = {"Accept": "application/json", "Content-Type": "application/json"}
+            payload = {"url": text, "videoQuality": "720", "downloadMode": "auto"}
+
+            try:
+                response = requests.post(COBALT_API_URL, json=payload, headers=headers, timeout=12)
+                if response.status_code == 200:
+                    stream_url = response.json().get("url")
+                    if stream_url:
+                        reply_markup = {
+                            "inline_keyboard": [
+                                [{"text": "🚀 High-Speed Download (Fast)", "url": MONETAG_SMARTLINK}],
+                                [{"text": "📁 Direct Stream Link (Backup)", "url": stream_url}]
+                            ]
+                        }
+                        send_telegram_message(
+                            chat_id, 
+                            "✅ *Your video is fully processed and ready!*\n\nSelect a download mirror below:", 
+                            reply_markup=reply_markup
+                        )
+                    else:
+                        send_telegram_message(chat_id, "❌ Failed to parse media stream extraction vectors.")
+                else:
+                    send_telegram_message(chat_id, f"❌ Processing engine error: {response.status_code}")
+            except Exception as e:
+                send_telegram_message(chat_id, f"💥 Error calling processing server: {str(e)}")
+        else:
+            send_telegram_message(chat_id, "❌ Please send a valid YouTube link.")
+
+        return {"statusCode": 200, "body": "Success"}
 
     except Exception as err:
-        print(f"Crash details: {str(err)}")
-        return {
-            "statusCode": 500,
-            "body": json.dumps({"status": "error", "error": str(err)})
-        }
+        print(f"Crash: {str(err)}")
+        return {"statusCode": 500, "body": "Error"}
